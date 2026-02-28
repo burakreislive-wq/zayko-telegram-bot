@@ -8,12 +8,14 @@ from telegram import (
     ChatPermissions,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
+    ChatMemberUpdated,
 )
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
     MessageHandler,
     ContextTypes,
+    ChatMemberHandler,
     filters,
 )
 
@@ -24,11 +26,9 @@ TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 if not TOKEN:
     raise RuntimeError("TELEGRAM_BOT_TOKEN eksik! Railway Variables'a ekle.")
 
-# Link & mention regex
 LINK_RE = re.compile(r"(https?://|t\.me/|www\.)", re.IGNORECASE)
 MENTION_RE = re.compile(r"@\w+", re.IGNORECASE)
 
-# Küfür / NSFW kelimeler (basit substring kontrol)
 BAD_WORDS = [
     "porno", "porn", "sex", "nsfw",
     "sik", "siktir", "amk", "aq",
@@ -36,18 +36,15 @@ BAD_WORDS = [
     "yarrak", "göt", "fuck",
 ]
 
-# Mention edildiğinde ceza uygulanmayacak admin/mod usernames ( @ olmadan )
-# ÖRNEK: @MissRose_bot ise buraya "MissRose_bot" yazmalısın.
+# @ olmadan yaz (örn: @MissRose_bot -> "MissRose_bot")
 ALLOWED_ADMIN_MENTIONS = {
-    "rose_admin",
+    # "MissRose_bot",
 }
 
-# Ceza kademeleri
 FIRST_MUTE_MIN = 5
 SECOND_MUTE_MIN = 30
-RESET_AFTER_HOURS = 24  # 24 saat sonra ihlal sayısı sıfırlansın
+RESET_AFTER_HOURS = 24
 
-# (RAM) ihlal takibi: bot restart olursa sıfırlanır
 OFFENSES = {}  # key=(chat_id,user_id) -> {"count": int, "last": epoch}
 
 # =====================
@@ -69,7 +66,6 @@ async def site(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    # Foto varsa foto+buton, yoksa sadece yazı+buton
     try:
         with open("site_banner.jpg", "rb") as photo:
             await update.message.reply_photo(
@@ -81,19 +77,34 @@ async def site(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(caption, reply_markup=reply_markup)
 
 # =====================
-# HOŞ GELDİN
+# HOŞ GELDİN (KESİN YÖNTEM)
 # =====================
-async def welcome(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    msg = update.effective_message
-    if not msg or not msg.new_chat_members:
+def _is_join(update: ChatMemberUpdated) -> bool:
+    # Üye katıldı mı?
+    old = update.old_chat_member.status
+    new = update.new_chat_member.status
+    # left/kicked -> member gibi geçişler JOIN sayılır
+    return old in ("left", "kicked") and new in ("member", "restricted")
+
+async def welcome_chat_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    cmu: ChatMemberUpdated = update.chat_member
+    if not cmu:
         return
 
-    for member in msg.new_chat_members:
-        name = member.full_name or member.first_name or "Üye"
-        await context.bot.send_message(
-            chat_id=msg.chat_id,
-            text=f"Casino Zayko grubumuza hoş geldin {name}"
-        )
+    # sadece gruplar
+    if cmu.chat.type not in ("group", "supergroup"):
+        return
+
+    if not _is_join(cmu):
+        return
+
+    user = cmu.new_chat_member.user
+    name = user.full_name or user.first_name or "Üye"
+
+    await context.bot.send_message(
+        chat_id=cmu.chat.id,
+        text=f"Casino Zayko grubumuza hoş geldin {name}"
+    )
 
 # =====================
 # YARDIMCI FONKSİYONLAR
@@ -103,7 +114,6 @@ def contains_bad_word(text: str) -> bool:
     return any(w in lower for w in BAD_WORDS)
 
 def extract_mentions(text: str):
-    # @abc -> {"abc"}
     return {m[1:] for m in MENTION_RE.findall(text or "")}
 
 def inc_offense(chat_id: int, user_id: int) -> int:
@@ -151,13 +161,18 @@ async def moderate(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not msg or not chat or not user:
         return
 
-    # Servis mesajlarını (katıldı/ayrıldı) moderasyona sokma
+    # servis mesajlarını karıştırma
     if msg.new_chat_members or msg.left_chat_member:
         return
 
     text = msg.text or msg.caption or ""
 
-    # Admin/kurucu/modu ASLA cezalandırma
+    # Komutlar / !site vs dokunma
+    lower = text.strip().lower()
+    if lower.startswith("/start") or lower.startswith("/site") or lower.startswith("!site"):
+        return
+
+    # Admin/kurucu asla cezalanmasın
     try:
         sender_member = await context.bot.get_chat_member(chat.id, user.id)
         if sender_member.status in ("administrator", "creator"):
@@ -165,19 +180,11 @@ async def moderate(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except:
         pass
 
-    # Komutları ellemeyelim
-    lower = text.strip().lower()
-    if lower.startswith("/start") or lower.startswith("/site") or lower.startswith("!site"):
-        return
-
-    # Link / mention / küfür tespiti
     entities = list(msg.entities or []) + list(msg.caption_entities or [])
-
     has_entity_link = any(e.type in ("url", "text_link") for e in entities)
     has_regex_link = bool(LINK_RE.search(text))
 
-    # mention: hem regex hem de Telegram entity türü "mention"
-    has_entity_mention = any(e.type == "mention" for e in entities)
+    has_entity_mention = any(e.type in ("mention", "text_mention") for e in entities)
     has_regex_mention = bool(MENTION_RE.search(text))
     has_mention = has_entity_mention or has_regex_mention
 
@@ -197,7 +204,7 @@ async def moderate(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except:
         pass
 
-    # Ceza uygula (1->5dk, 2->30dk, 3->ban)
+    # Ceza: 1=5dk, 2=30dk, 3=ban
     strike = inc_offense(chat.id, user.id)
     try:
         await punish(chat.id, user.id, context, strike)
@@ -215,13 +222,13 @@ def main():
     app.add_handler(CommandHandler("site", site), group=0)
     app.add_handler(MessageHandler(filters.Regex(r"^!site(\s|$)"), site), group=0)
 
-    # Hoş geldin (öncelikli)
+    # HOŞ GELDİN (ChatMemberHandler)
     app.add_handler(
-        MessageHandler(filters.ChatType.GROUPS & filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome),
+        ChatMemberHandler(welcome_chat_member, ChatMemberHandler.CHAT_MEMBER),
         group=0
     )
 
-    # Moderasyon (welcome/komutlardan sonra çalışsın)
+    # Moderasyon
     app.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, moderate), group=1)
 
     app.run_polling()
