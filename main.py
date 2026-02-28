@@ -31,8 +31,8 @@ async def site(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     keyboard = [[
-        InlineKeyboardButton("✅ Site 1", url="https://cutt.ly/CtEwy6Xa"),
-        InlineKeyboardButton("✅ Site 2", url="https://cutt.ly/ritzzayko"),
+        InlineKeyboardButton("Superbetin", url="https://cutt.ly/CtEwy6Xa"),
+        InlineKeyboardButton("Ritzbet", url="https://cutt.ly/ritzzayko"),
     ]]
 
     reply_markup = InlineKeyboardMarkup(keyboard)
