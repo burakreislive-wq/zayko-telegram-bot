@@ -28,7 +28,7 @@ async def mute_on_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     text = msg.text or msg.caption or ""
-    entities = (msg.entities or []) + (msg.caption_entities or [])
+    entities = list(msg.entities or []) + list(msg.caption_entities or [])
 
     has_entity_link = any(e.type in ("url", "text_link") for e in entities)
     has_regex_link = bool(LINK_RE.search(text))
