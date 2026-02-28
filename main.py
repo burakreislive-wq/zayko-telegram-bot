@@ -1,7 +1,8 @@
 import os
 import re
 from datetime import datetime, timedelta, timezone
-from telegram import Update, ChatPermissions
+
+from telegram import Update, ChatPermissions, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
@@ -11,12 +12,37 @@ from telegram.ext import (
 )
 
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+if not TOKEN:
+    raise RuntimeError("TELEGRAM_BOT_TOKEN eksik! Railway Variables'a ekle.")
 
 LINK_RE = re.compile(r"(https?://|t\.me/|www\.)", re.IGNORECASE)
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Bot aktif. Link atan 5 dakika susturulur.")
+    await update.message.reply_text("Bot aktif. !site yazarak siteleri görebilirsin.")
+
+
+async def site(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    caption = (
+        "✅ Güvenilir sitelerimiz için aşağıdaki linklere tıklayabilirsiniz.\n\n"
+        "⚠️ Özelden para isteyen, bonus eklemek isteyenleri dikkate almayın.\n"
+        "📩 !mod yazarak bize ulaşabilirsiniz.\n\n"
+        "🔽 Önerdiğimiz Siteler 🔽"
+    )
+
+    keyboard = [[
+        InlineKeyboardButton("✅ Site 1", url="https://cutt.ly/CtEwy6Xa"),
+        InlineKeyboardButton("✅ Site 2", url="https://cutt.ly/ritzzayko"),
+    ]]
+
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    with open("site_banner.jpg", "rb") as photo:
+        await update.message.reply_photo(
+            photo=photo,
+            caption=caption,
+            reply_markup=reply_markup
+        )
 
 
 async def mute_on_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -36,7 +62,6 @@ async def mute_on_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not (has_entity_link or has_regex_link):
         return
 
-    # Adminlara dokunma
     try:
         member = await context.bot.get_chat_member(chat.id, user.id)
         if member.status in ("administrator", "creator"):
@@ -44,13 +69,11 @@ async def mute_on_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except:
         pass
 
-    # Mesajı sil
     try:
         await msg.delete()
     except:
         pass
 
-    # 5 dakika sustur
     until = datetime.now(timezone.utc) + timedelta(minutes=5)
 
     try:
@@ -68,6 +91,8 @@ def main():
     app = ApplicationBuilder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("site", site))
+    app.add_handler(MessageHandler(filters.Regex(r"^!site"), site))
     app.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, mute_on_link))
 
     app.run_polling()
