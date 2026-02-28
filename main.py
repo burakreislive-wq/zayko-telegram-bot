@@ -28,7 +28,7 @@ if not TOKEN:
 LINK_RE = re.compile(r"(https?://|t\.me/|www\.)", re.IGNORECASE)
 MENTION_RE = re.compile(r"@\w+", re.IGNORECASE)
 
-# Küfür / NSFW (basit kontrol: metin içinde geçiyorsa)
+# Küfür / NSFW kelimeler (basit substring kontrol)
 BAD_WORDS = [
     "porno", "porn", "sex", "nsfw",
     "sik", "siktir", "amk", "aq",
@@ -36,7 +36,8 @@ BAD_WORDS = [
     "yarrak", "göt", "fuck",
 ]
 
-# Bahsedilince ceza uygulanmayacak admin usernames ( @ olmadan )
+# Mention edildiğinde ceza uygulanmayacak admin/mod usernames ( @ olmadan )
+# ÖRNEK: @MissRose_bot ise buraya "MissRose_bot" yazmalısın.
 ALLOWED_ADMIN_MENTIONS = {
     "rose_admin",
 }
@@ -83,10 +84,16 @@ async def site(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # HOŞ GELDİN
 # =====================
 async def welcome(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message and update.message.new_chat_members:
-        for member in update.message.new_chat_members:
-            name = member.first_name or "Üye"
-            await update.message.reply_text(f"Casino Zayko grubumuza hoş geldin {name}")
+    msg = update.effective_message
+    if not msg or not msg.new_chat_members:
+        return
+
+    for member in msg.new_chat_members:
+        name = member.full_name or member.first_name or "Üye"
+        await context.bot.send_message(
+            chat_id=msg.chat_id,
+            text=f"Casino Zayko grubumuza hoş geldin {name}"
+        )
 
 # =====================
 # YARDIMCI FONKSİYONLAR
@@ -144,6 +151,10 @@ async def moderate(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not msg or not chat or not user:
         return
 
+    # Servis mesajlarını (katıldı/ayrıldı) moderasyona sokma
+    if msg.new_chat_members or msg.left_chat_member:
+        return
+
     text = msg.text or msg.caption or ""
 
     # Admin/kurucu/modu ASLA cezalandırma
@@ -154,16 +165,22 @@ async def moderate(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except:
         pass
 
-    # Komutları ellemeyelim (site ve start vs.)
+    # Komutları ellemeyelim
     lower = text.strip().lower()
     if lower.startswith("/start") or lower.startswith("/site") or lower.startswith("!site"):
         return
 
     # Link / mention / küfür tespiti
     entities = list(msg.entities or []) + list(msg.caption_entities or [])
+
     has_entity_link = any(e.type in ("url", "text_link") for e in entities)
     has_regex_link = bool(LINK_RE.search(text))
-    has_mention = bool(MENTION_RE.search(text))
+
+    # mention: hem regex hem de Telegram entity türü "mention"
+    has_entity_mention = any(e.type == "mention" for e in entities)
+    has_regex_mention = bool(MENTION_RE.search(text))
+    has_mention = has_entity_mention or has_regex_mention
+
     has_bad_word = contains_bad_word(text)
 
     if not (has_entity_link or has_regex_link or has_mention or has_bad_word):
@@ -194,15 +211,18 @@ def main():
     app = ApplicationBuilder().token(TOKEN).build()
 
     # Komutlar / !site
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("site", site))
-    app.add_handler(MessageHandler(filters.Regex(r"^!site(\s|$)"), site))
+    app.add_handler(CommandHandler("start", start), group=0)
+    app.add_handler(CommandHandler("site", site), group=0)
+    app.add_handler(MessageHandler(filters.Regex(r"^!site(\s|$)"), site), group=0)
 
-    # Hoş geldin
-    app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome))
+    # Hoş geldin (öncelikli)
+    app.add_handler(
+        MessageHandler(filters.ChatType.GROUPS & filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome),
+        group=0
+    )
 
-    # Moderasyon (komut olmayan her şey)
-    app.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, moderate))
+    # Moderasyon (welcome/komutlardan sonra çalışsın)
+    app.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, moderate), group=1)
 
     app.run_polling()
 
