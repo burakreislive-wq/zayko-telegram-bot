@@ -77,13 +77,11 @@ async def site(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(caption, reply_markup=reply_markup)
 
 # =====================
-# HOŞ GELDİN (KESİN YÖNTEM)
+# HOŞ GELDİN (ASIL: ChatMemberHandler)
 # =====================
 def _is_join(update: ChatMemberUpdated) -> bool:
-    # Üye katıldı mı?
     old = update.old_chat_member.status
     new = update.new_chat_member.status
-    # left/kicked -> member gibi geçişler JOIN sayılır
     return old in ("left", "kicked") and new in ("member", "restricted")
 
 async def welcome_chat_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -91,7 +89,6 @@ async def welcome_chat_member(update: Update, context: ContextTypes.DEFAULT_TYPE
     if not cmu:
         return
 
-    # sadece gruplar
     if cmu.chat.type not in ("group", "supergroup"):
         return
 
@@ -105,6 +102,21 @@ async def welcome_chat_member(update: Update, context: ContextTypes.DEFAULT_TYPE
         chat_id=cmu.chat.id,
         text=f"Casino Zayko grubumuza hoş geldin {name}"
     )
+
+# =====================
+# HOŞ GELDİN (YEDEK: NEW_CHAT_MEMBERS)
+# =====================
+async def welcome_fallback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    msg = update.effective_message
+    if not msg or not msg.new_chat_members:
+        return
+
+    for member in msg.new_chat_members:
+        name = member.full_name or member.first_name or "Üye"
+        await context.bot.send_message(
+            chat_id=msg.chat_id,
+            text=f"Casino Zayko grubumuza hoş geldin {name}"
+        )
 
 # =====================
 # YARDIMCI FONKSİYONLAR
@@ -161,7 +173,7 @@ async def moderate(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not msg or not chat or not user:
         return
 
-    # servis mesajlarını karıştırma
+    # servis mesajlarını karıştırma (join/leave)
     if msg.new_chat_members or msg.left_chat_member:
         return
 
@@ -222,16 +234,15 @@ def main():
     app.add_handler(CommandHandler("site", site), group=0)
     app.add_handler(MessageHandler(filters.Regex(r"^!site(\s|$)"), site), group=0)
 
-    # HOŞ GELDİN (ChatMemberHandler)
-    app.add_handler(
-        ChatMemberHandler(welcome_chat_member, ChatMemberHandler.CHAT_MEMBER),
-        group=0
-    )
+    # Hoş geldin (asıl + yedek)
+    app.add_handler(ChatMemberHandler(welcome_chat_member, ChatMemberHandler.CHAT_MEMBER), group=0)
+    app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome_fallback), group=0)
 
     # Moderasyon
     app.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, moderate), group=1)
 
-    app.run_polling()
+    # allowed_updates: chat_member vb. hepsi gelsin
+    app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == "__main__":
     main()
