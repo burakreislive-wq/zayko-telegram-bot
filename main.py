@@ -103,7 +103,7 @@ async def welcome_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await context.bot.send_message(
         chat_id=cmu.chat.id,
-        text=f"Casino Zayko grubumuza hoş geldin {name}"
+        text=f"Casino Zayko'ya hoş geldin {name} 👋\nNasılsın? ☺️"
     )
 
 # =====================
