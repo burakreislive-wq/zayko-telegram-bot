@@ -62,10 +62,15 @@ async def site(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🔽 Önerdiğimiz Siteler 🔽"
     )
 
-    keyboard = [[
-        InlineKeyboardButton("Superbetin", url="https://cutt.ly/CtEwy6Xa"),
-        InlineKeyboardButton("Ritzbet", url="https://cutt.ly/ritzzayko"),
-    ]]
+    keyboard = [
+        [
+            InlineKeyboardButton("Superbetin", url="https://cutt.ly/CtEwy6Xa"),
+            InlineKeyboardButton("Ritzbet", url="https://cutt.ly/ritzzayko"),
+        ],
+        [
+            InlineKeyboardButton("Vola Casino", url="https://t2m.io/gzy9EKBlGe"),
+        ]
+    ]
 
     reply_markup = InlineKeyboardMarkup(keyboard)
 
@@ -158,42 +163,35 @@ async def punish(chat_id: int, user_id: int, context: ContextTypes.DEFAULT_TYPE,
 async def moderate(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.effective_message
     chat = update.effective_chat
-    user = update.effective_user  # kanaldan gelenlerde None olabilir
+    user = update.effective_user
 
     if not msg or not chat:
         return
 
-    # ✅ 1) KANALDAN SOHBETE DÜŞEN POSTLARA DOKUNMA
-    # sender_chat: mesajı bir kanal/anon admin gönderiyorsa dolu olur
-    # is_automatic_forward: kanal postu tartışmaya otomatik düştüyse True olur
+    # Kanal tartışma postlarına dokunma
     if msg.sender_chat is not None:
-        # Kanal postları / anonim admin mesajları genelde burada yakalanır
-        # Kanal postlarını kesin affedelim:
         if msg.sender_chat.type == "channel":
             return
-        # İstersen anonim admin mesajlarına da dokunma:
-        # if msg.sender_chat.type in ("channel", "supergroup", "group"):
-        #     return
 
     if getattr(msg, "is_automatic_forward", False):
         return
 
-    # ✅ 2) Servis mesajlarını (katıldı/ayrıldı) karıştırma
+    # Katılma / ayrılma servis mesajlarını karıştırma
     if msg.new_chat_members or msg.left_chat_member:
         return
 
-    # user yoksa ceza uygulama (kanal/anon gibi durumlarda)
+    # user yoksa geç
     if user is None:
         return
 
     text = msg.text or msg.caption or ""
 
-    # ✅ 3) Komutları elleme
+    # Komutları elleme
     lower = text.strip().lower()
     if lower.startswith("/start") or lower.startswith("/site") or lower.startswith("!site"):
         return
 
-    # ✅ 4) Adminleri elleme
+    # Adminleri elleme
     try:
         member = await context.bot.get_chat_member(chat.id, user.id)
         if member.status in ("administrator", "creator"):
@@ -201,8 +199,8 @@ async def moderate(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except:
         pass
 
-    # ✅ 5) Link / mention / küfür tespiti
     entities = list(msg.entities or []) + list(msg.caption_entities or [])
+
     has_link = any(e.type in ("url", "text_link") for e in entities) or bool(LINK_RE.search(text))
     has_mention = any(e.type in ("mention", "text_mention") for e in entities) or bool(MENTION_RE.search(text))
     has_bad = contains_bad_word(text)
@@ -210,19 +208,17 @@ async def moderate(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not (has_link or has_mention or has_bad):
         return
 
-    # ✅ 6) İzinli admin mention varsa affet
     mentioned = extract_mentions(text)
     if mentioned.intersection(ALLOWED_ADMIN_MENTIONS):
         return
 
-    # ✅ 7) Mesajı sil
     try:
         await msg.delete()
     except:
         pass
 
-    # ✅ 8) Ceza: 1=5dk, 2=30dk, 3=ban
     strike = increase_strike(chat.id, user.id)
+
     try:
         await punish(chat.id, user.id, context, strike)
     except Exception as e:
