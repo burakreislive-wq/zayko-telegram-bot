@@ -67,7 +67,7 @@ async def site(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ],
         [
             InlineKeyboardButton("Ritzbet", url="https://cutt.ly/ritzzayko"),
-            InlineKeyboardButton("Yeni Site", url="https://t2m.io/gzy9EKBlGe"),
+            InlineKeyboardButton("Vola Casino", url="https://t2m.io/gzy9EKBlGe"),
         ]
     ]
 
