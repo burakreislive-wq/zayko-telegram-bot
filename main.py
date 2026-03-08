@@ -36,9 +36,7 @@ BAD_WORDS = [
     "yarrak", "göt", "fuck",
 ]
 
-ALLOWED_ADMIN_MENTIONS = {
-    # Örnek: "MissRose_bot",
-}
+ALLOWED_ADMIN_MENTIONS = {}
 
 FIRST_MUTE_MIN = 5
 SECOND_MUTE_MIN = 30
@@ -64,11 +62,12 @@ async def site(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     keyboard = [
         [
+            InlineKeyboardButton("Betzore", url="https://bit.ly/Betzore"),
             InlineKeyboardButton("Superbetin", url="https://cutt.ly/CtEwy6Xa"),
-            InlineKeyboardButton("Ritzbet", url="https://cutt.ly/ritzzayko"),
         ],
         [
-            InlineKeyboardButton("Vola Casino", url="https://t2m.io/gzy9EKBlGe"),
+            InlineKeyboardButton("Ritzbet", url="https://cutt.ly/ritzzayko"),
+            InlineKeyboardButton("Yeni Site", url="https://t2m.io/gzy9EKBlGe"),
         ]
     ]
 
@@ -168,7 +167,7 @@ async def moderate(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not msg or not chat:
         return
 
-    # Kanal tartışma postlarına dokunma
+    # Kanal tartışma postlarını silme
     if msg.sender_chat is not None:
         if msg.sender_chat.type == "channel":
             return
@@ -176,22 +175,18 @@ async def moderate(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if getattr(msg, "is_automatic_forward", False):
         return
 
-    # Katılma / ayrılma servis mesajlarını karıştırma
     if msg.new_chat_members or msg.left_chat_member:
         return
 
-    # user yoksa geç
     if user is None:
         return
 
     text = msg.text or msg.caption or ""
 
-    # Komutları elleme
     lower = text.strip().lower()
     if lower.startswith("/start") or lower.startswith("/site") or lower.startswith("!site"):
         return
 
-    # Adminleri elleme
     try:
         member = await context.bot.get_chat_member(chat.id, user.id)
         if member.status in ("administrator", "creator"):
